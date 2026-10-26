@@ -1,0 +1,49 @@
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# --- IDE / CLion ---
+.idea/
+*.iml
+*.iws
+*.ipr
+cmake-build-*/
+out/
+.vscode/
+
+# --- CMake ---
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# --- Сборка / бинарники ---
+build/
+build_*/
+bin/
+lib/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+
+# --- Отладка / логи ---
+*.log
+*.pdb
+*.ilk
+*.exp
+core
+core.*
