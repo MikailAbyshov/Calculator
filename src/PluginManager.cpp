@@ -173,6 +173,6 @@ double PluginManager::call(const std::string& name, double arg) const {
 std::vector<std::string> PluginManager::loadedNames() const {
     std::vector<std::string> names;
     names.reserve(registry_.size());
-    for (auto& kv : registry_) names.push_back(kv.first);
+    for (const auto& kv : registry_) names.push_back(kv.first);
     return names;
 }

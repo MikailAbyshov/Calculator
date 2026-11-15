@@ -4,6 +4,7 @@
 
 #include <map>
 #include <string>
+#include <memory>
 #include <vector>
 
 class PluginManager {
