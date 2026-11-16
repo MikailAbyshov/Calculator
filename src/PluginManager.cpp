@@ -75,13 +75,6 @@ bool isPluginFile(const fs::path &path) {
 #endif
 }
 
-std::string joinError(const std::string &prefix,
-                      const std::string &detail) {
-    std::string message = prefix;
-    message += detail;
-    return message;
-}
-
 }  // namespace
 
 PluginManager::~PluginManager() {
@@ -122,18 +115,23 @@ std::size_t PluginManager::loadDirectory(const std::string &directory) {
         std::string errorMessage;
         void *handle = openLibrary(path, errorMessage);
         if (handle == nullptr) {
-            Logger::warn(joinError("Failed to load '" + path + "': ",
-                                   errorMessage));
+            std::string message = "Failed to load '";
+            message += path;
+            message += "': ";
+            message += errorMessage;
+            Logger::warn(message);
             continue;
         }
 
         auto getter = reinterpret_cast<GetPluginFunctionFn>(
             resolveSymbol(handle, CALC_PLUGIN_ENTRY));
         if (getter == nullptr) {
-            Logger::warn(joinError("No '" +
-                                       std::string(CALC_PLUGIN_ENTRY) +
-                                       "' symbol in '",
-                                   path + "'"));
+            std::string message = "No '";
+            message += CALC_PLUGIN_ENTRY;
+            message += "' symbol in '";
+            message += path;
+            message += '\'';
+            Logger::warn(message);
             closeLibrary(handle);
             continue;
         }
@@ -142,8 +140,11 @@ std::size_t PluginManager::loadDirectory(const std::string &directory) {
         try {
             function = getter();
         } catch (const std::exception &exception) {
-            Logger::warn(joinError("Plugin '" + path + "' threw during init: ",
-                                   exception.what()));
+            std::string message = "Plugin '";
+            message += path;
+            message += "' threw during init: ";
+            message += exception.what();
+            Logger::warn(message);
             closeLibrary(handle);
             continue;
         } catch (...) {
@@ -172,7 +173,8 @@ std::size_t PluginManager::loadDirectory(const std::string &directory) {
             message += functionName;
             message += "' from '";
             message += path;
-            message += "' — skipped";
+            message += '\'';
+            message += " — skipped";
             Logger::warn(message);
             closeLibrary(handle);
             continue;

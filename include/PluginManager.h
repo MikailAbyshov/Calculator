@@ -19,11 +19,11 @@ public:
 
     std::size_t loadDirectory(const std::string &directory);
 
-    bool has(const std::string &name) const;
+    [[nodiscard]] bool has(const std::string &name) const;
 
-    double call(const std::string &name, double arg) const;
+    [[nodiscard]] double call(const std::string &name, double arg) const;
 
-    std::vector<std::string> loadedNames() const;
+    [[nodiscard]] std::vector<std::string> loadedNames() const;
 
 private:
     struct LoadedPlugin {

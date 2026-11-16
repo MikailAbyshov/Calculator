@@ -139,7 +139,7 @@ double ExpressionParser::parsePrimary() {
 
     std::string text = "unexpected character '";
     text += symbol;
-    text += "'";
+    text += '\'';
     fail(text);
 }
 
