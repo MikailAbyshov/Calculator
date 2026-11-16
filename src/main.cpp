@@ -6,65 +6,97 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace {
-constexpr const char* kDefaultPluginDir = "plugins";
+
+constexpr const char *kDefaultPluginDir = "plugins";
+
+struct Options {
+    std::string pluginDirectory = kDefaultPluginDir;
+    bool quiet = false;
+};
+
+Options parseArguments(int argc, char **argv) {
+    Options options;
+    for (int index = 1; index < argc; ++index) {
+        std::string argument = argv[index];
+        if (argument == "--quiet") {
+            options.quiet = true;
+        } else if (argument == "--plugins" && index + 1 < argc) {
+            options.pluginDirectory = argv[++index];
+        }
+    }
+    return options;
 }
 
-int main(int argc, char** argv) {
-    try {
-        std::string pluginDir = kDefaultPluginDir;
-        bool quiet = false;
-        for (int i = 1; i < argc; ++i) {
-            std::string a = argv[i];
-            if (a == "--quiet") quiet = true;
-            else if (a == "--plugins" && i + 1 < argc) pluginDir = argv[++i];
+void printAvailableFunctions(const PluginManager &plugins) {
+    auto names = plugins.loadedNames();
+    if (names.empty()) {
+        Logger::warn("No plugin functions available. "
+                     "Only +,-,*,/,^ and parentheses are supported.");
+        return;
+    }
+    std::string list;
+    for (const auto &name : names) {
+        if (!list.empty()) {
+            list += ", ";
         }
-        if (quiet) Logger::setVerbose(false);
+        list += name;
+    }
+    Logger::info("Available functions: " + list);
+}
+
+void runRepl(const PluginManager &plugins) {
+    std::string line;
+    while (true) {
+        std::cout << "> " << std::flush;
+        if (!std::getline(std::cin, line)) {
+            break;
+        }
+        if (line == "quit" || line == "exit") {
+            break;
+        }
+        if (line.empty()) {
+            continue;
+        }
+        try {
+            ExpressionParser parser(plugins);
+            std::cout << parser.evaluate(line) << '\n';
+        } catch (const std::exception &exception) {
+            std::cerr << "Error: " << exception.what() << '\n';
+        } catch (...) {
+            std::cerr << "Error: unknown exception\n";
+        }
+    }
+}
+
+}  // namespace
+
+int main(int argc, char **argv) {
+    try {
+        Options options = parseArguments(argc, argv);
+        if (options.quiet) {
+            Logger::setVerbose(false);
+        }
 
         namespace fs = std::filesystem;
         Logger::info("CWD: " + fs::current_path().string());
         Logger::info("Plugin dir: " +
-                     fs::absolute(pluginDir).lexically_normal().string());
+                     fs::absolute(options.pluginDirectory)
+                         .lexically_normal()
+                         .string());
 
         PluginManager plugins;
-        plugins.loadDirectory(pluginDir);
-
-        auto names = plugins.loadedNames();
-        if (names.empty()) {
-            Logger::warn("No plugin functions available. "
-                         "Only +,-,*,/,^ and parentheses are supported.");
-        } else {
-            std::string list;
-            for (auto& n : names) {
-                if (!list.empty()) list += ", ";
-                list += n;
-            }
-            Logger::info("Available functions: " + list);
-        }
-
-        std::string line;
-        while (true) {
-            std::cout << "> " << std::flush;
-            if (!std::getline(std::cin, line)) break;
-            if (line == "quit" || line == "exit") break;
-            if (line.empty()) continue;
-
-            try {
-                ExpressionParser parser(plugins);
-                std::cout << parser.evaluate(line) << '\n';
-            } catch (const std::exception& e) {
-                std::cerr << "Error: " << e.what() << '\n';
-            } catch (...) {
-                std::cerr << "Error: unknown exception\n";
-            }
-        }
+        plugins.loadDirectory(options.pluginDirectory);
+        printAvailableFunctions(plugins);
+        runRepl(plugins);
         return 0;
-    } catch (const std::exception& e) {
-        Logger::error(std::string("Fatal: ") + e.what());
+    } catch (const std::exception &exception) {
+        Logger::errorRaw(exception.what());
         return 1;
     } catch (...) {
-        Logger::error("Fatal: unknown exception");
+        Logger::errorRaw("Fatal: unknown exception");
         return 1;
     }
 }

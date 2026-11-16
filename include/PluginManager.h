@@ -3,8 +3,8 @@
 #include "PluginAPI.h"
 
 #include <map>
-#include <string>
 #include <memory>
+#include <string>
 #include <vector>
 
 class PluginManager {
@@ -17,7 +17,7 @@ public:
 
     PluginManager &operator=(const PluginManager &) = delete;
 
-    size_t loadDirectory(const std::string &directory);
+    std::size_t loadDirectory(const std::string &directory);
 
     bool has(const std::string &name) const;
 
@@ -28,12 +28,12 @@ public:
 private:
     struct LoadedPlugin {
         std::string filePath;
-        const PluginFunction *fn = nullptr;
+        const PluginFunction *function = nullptr;
         void *handle = nullptr;
     };
 
     void unloadAll();
 
-    std::vector<std::unique_ptr<LoadedPlugin> > plugins_;
+    std::vector<std::unique_ptr<LoadedPlugin>> plugins_;
     std::map<std::string, const PluginFunction *> registry_;
 };

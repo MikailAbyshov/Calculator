@@ -1,8 +1,8 @@
 #include "PluginManager.h"
+
 #include "Logger.h"
 
 #include <algorithm>
-#include <cstring>
 #include <filesystem>
 #include <stdexcept>
 
@@ -16,25 +16,32 @@ namespace fs = std::filesystem;
 
 namespace {
 
-void* openLibrary(const std::string& path, std::string& err) {
+void *openLibrary(const std::string &path, std::string &errorMessage) {
 #ifdef _WIN32
-    HMODULE h = ::LoadLibraryA(path.c_str());
-    if (!h) {
-        err = "LoadLibrary failed, error=" + std::to_string(::GetLastError());
+    HMODULE module = ::LoadLibraryA(path.c_str());
+    if (module == nullptr) {
+        errorMessage = "LoadLibrary failed, error=" +
+                       std::to_string(::GetLastError());
     }
-    return reinterpret_cast<void*>(h);
+    return reinterpret_cast<void *>(module);
 #else
-    void* h = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-    if (!h) {
-        const char* e = ::dlerror();
-        err = e ? e : "dlopen failed";
+    void *module = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (module == nullptr) {
+        const char *error = ::dlerror();
+        if (error != nullptr) {
+            errorMessage = error;
+        } else {
+            errorMessage = "dlopen failed";
+        }
     }
-    return h;
+    return module;
 #endif
 }
 
-void closeLibrary(void* handle) {
-    if (!handle) return;
+void closeLibrary(void *handle) {
+    if (handle == nullptr) {
+        return;
+    }
 #ifdef _WIN32
     ::FreeLibrary(reinterpret_cast<HMODULE>(handle));
 #else
@@ -42,28 +49,40 @@ void closeLibrary(void* handle) {
 #endif
 }
 
-void* resolveSymbol(void* handle, const char* name) {
+void *resolveSymbol(void *handle, const char *name) {
 #ifdef _WIN32
-    return reinterpret_cast<void*>(
+    return reinterpret_cast<void *>(
         ::GetProcAddress(reinterpret_cast<HMODULE>(handle), name));
 #else
     return ::dlsym(handle, name);
 #endif
 }
 
-bool isPluginFile(const fs::path& p) {
-    if (!p.has_extension()) return false;
-    std::string ext = p.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+bool isPluginFile(const fs::path &path) {
+    if (!path.has_extension()) {
+        return false;
+    }
+    std::string extension = path.extension().string();
+    std::transform(
+        extension.begin(), extension.end(), extension.begin(),
+        [](unsigned char symbol) {
+            return static_cast<char>(std::tolower(symbol));
+        });
 #ifdef _WIN32
-    return ext == ".dll";
+    return extension == ".dll";
 #else
-    return ext == ".so" || ext == ".dylib";
+    return extension == ".so" || extension == ".dylib";
 #endif
 }
 
+std::string joinError(const std::string &prefix,
+                      const std::string &detail) {
+    std::string message = prefix;
+    message += detail;
+    return message;
 }
+
+}  // namespace
 
 PluginManager::~PluginManager() {
     unloadAll();
@@ -71,84 +90,106 @@ PluginManager::~PluginManager() {
 
 void PluginManager::unloadAll() {
     registry_.clear();
-    for (auto& p : plugins_) {
-        closeLibrary(p->handle);
-        p->handle = nullptr;
+    for (const auto &plugin : plugins_) {
+        closeLibrary(plugin->handle);
+        plugin->handle = nullptr;
     }
     plugins_.clear();
 }
 
-size_t PluginManager::loadDirectory(const std::string& directory) {
-    std::error_code ec;
-    if (!fs::exists(directory, ec) || !fs::is_directory(directory, ec)) {
+std::size_t PluginManager::loadDirectory(const std::string &directory) {
+    std::error_code errorCode;
+    if (!fs::exists(directory, errorCode) ||
+        !fs::is_directory(directory, errorCode)) {
         Logger::warn("Plugin directory not found: " + directory);
         return 0;
     }
 
-    size_t loaded = 0;
-    for (const auto& entry : fs::directory_iterator(directory, ec)) {
-        if (ec) break;
-        if (!entry.is_regular_file()) continue;
-        if (!isPluginFile(entry.path())) continue;
+    std::size_t loaded = 0;
+    for (const auto &entry : fs::directory_iterator(directory, errorCode)) {
+        if (errorCode) {
+            break;
+        }
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        if (!isPluginFile(entry.path())) {
+            continue;
+        }
 
         const std::string path = entry.path().string();
 
-        std::string err;
-        void* handle = openLibrary(path, err);
-        if (!handle) {
-            Logger::warn("Failed to load '" + path + "': " + err);
+        std::string errorMessage;
+        void *handle = openLibrary(path, errorMessage);
+        if (handle == nullptr) {
+            Logger::warn(joinError("Failed to load '" + path + "': ",
+                                   errorMessage));
             continue;
         }
 
         auto getter = reinterpret_cast<GetPluginFunctionFn>(
             resolveSymbol(handle, CALC_PLUGIN_ENTRY));
-        if (!getter) {
-            Logger::warn("No '" + std::string(CALC_PLUGIN_ENTRY) +
-                         "' symbol in '" + path + "'");
+        if (getter == nullptr) {
+            Logger::warn(joinError("No '" +
+                                       std::string(CALC_PLUGIN_ENTRY) +
+                                       "' symbol in '",
+                                   path + "'"));
             closeLibrary(handle);
             continue;
         }
 
-        const PluginFunction* fn = nullptr;
+        const PluginFunction *function = nullptr;
         try {
-            fn = getter();
-        } catch (const std::exception& e) {
-            Logger::warn("Plugin '" + path + "' threw during init: " + e.what());
+            function = getter();
+        } catch (const std::exception &exception) {
+            Logger::warn(joinError("Plugin '" + path + "' threw during init: ",
+                                   exception.what()));
             closeLibrary(handle);
             continue;
         } catch (...) {
-            Logger::warn("Plugin '" + path + "' threw unknown exception during init");
+            Logger::warn(
+                "Plugin '" + path + "' threw unknown exception during init");
             closeLibrary(handle);
             continue;
         }
 
-        if (!fn || !fn->name || !fn->call || fn->arity < 0) {
+        if (function == nullptr || function->name == nullptr ||
+            function->call == nullptr || function->arity < 0) {
             Logger::warn("Plugin '" + path + "' returned invalid description");
             closeLibrary(handle);
             continue;
         }
 
-        const std::string fname = fn->name;
-        if (fname.empty()) {
+        const std::string functionName = function->name;
+        if (functionName.empty()) {
             Logger::warn("Plugin '" + path + "' has empty function name");
             closeLibrary(handle);
             continue;
         }
 
-        if (registry_.count(fname)) {
-            Logger::warn("Duplicate function '" + fname + "' from '" + path + "' — skipped");
+        if (registry_.count(functionName) != 0) {
+            std::string message = "Duplicate function '";
+            message += functionName;
+            message += "' from '";
+            message += path;
+            message += "' — skipped";
+            Logger::warn(message);
             closeLibrary(handle);
             continue;
         }
 
-        auto rec = std::make_unique<LoadedPlugin>();
-        rec->filePath = path;
-        rec->fn = fn;
-        rec->handle = handle;
-        registry_[fname] = fn;
-        plugins_.push_back(std::move(rec));
+        auto record = std::make_unique<LoadedPlugin>();
+        record->filePath = path;
+        record->function = function;
+        record->handle = handle;
+        registry_[functionName] = function;
+        plugins_.push_back(std::move(record));
 
-        Logger::info("Loaded function '" + fname + "' from " + path);
+        std::string message = "Loaded function '";
+        message += functionName;
+        message += "' from ";
+        message += path;
+        Logger::info(message);
         ++loaded;
     }
 
@@ -158,21 +199,23 @@ size_t PluginManager::loadDirectory(const std::string& directory) {
     return loaded;
 }
 
-bool PluginManager::has(const std::string& name) const {
+bool PluginManager::has(const std::string &name) const {
     return registry_.count(name) != 0;
 }
 
-double PluginManager::call(const std::string& name, double arg) const {
-    auto it = registry_.find(name);
-    if (it == registry_.end()) {
+double PluginManager::call(const std::string &name, double arg) const {
+    auto iter = registry_.find(name);
+    if (iter == registry_.end()) {
         throw std::runtime_error("Unknown function: " + name);
     }
-    return it->second->call(arg);
+    return iter->second->call(arg);
 }
 
 std::vector<std::string> PluginManager::loadedNames() const {
     std::vector<std::string> names;
     names.reserve(registry_.size());
-    for (const auto& kv : registry_) names.push_back(kv.first);
+    for (const auto &entry : registry_) {
+        names.push_back(entry.first);
+    }
     return names;
 }
